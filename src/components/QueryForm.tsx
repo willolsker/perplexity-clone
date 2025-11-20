@@ -6,11 +6,9 @@ import { motion } from "motion/react";
 interface QueryFormProps {
   onSubmit: (query: string) => void;
   isLoading: boolean;
-  mode?: "centered" | "bottom";
-  isSidebarOpen?: boolean;
 }
 
-export function QueryForm({ onSubmit, isLoading, mode = "centered", isSidebarOpen = false }: QueryFormProps) {
+export function QueryForm({ onSubmit, isLoading }: QueryFormProps) {
   const [query, setQuery] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -23,30 +21,8 @@ export function QueryForm({ onSubmit, isLoading, mode = "centered", isSidebarOpe
   return (
     <motion.div
       layout
-      initial={false}
-      animate={{
-        ...(mode === "centered"
-          ? {
-              position: "relative",
-              bottom: "auto",
-              left: "auto",
-              x: 0,
-              width: "100%",
-              zIndex: 10,
-            }
-          : {
-              position: "fixed",
-              bottom: 24,
-              // Adjust left/width based on sidebar state
-              left: isSidebarOpen ? "calc(50% - 160px)" : "50%",
-              x: "-50%",
-              width: isSidebarOpen ? "calc(90% - 320px)" : "90%",
-              maxWidth: "48rem",
-              zIndex: 50,
-            }),
-      }}
       transition={{ type: "spring", bounce: 0.15, duration: 0.6 }}
-      className={mode === "centered" ? "" : "px-4 md:px-0"}
+      className="w-full"
     >
       <form onSubmit={handleSubmit} className="w-full relative">
         <div className="relative">
