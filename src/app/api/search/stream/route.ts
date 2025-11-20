@@ -11,7 +11,7 @@ interface Message {
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages } = await req.json();
+    const { messages, startIndex = 1 } = await req.json();
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new NextResponse("Messages are required", { status: 400 });
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
             config: {
               tools: [{ googleSearch: {} }],
               systemInstruction: `Please cite your sources before answering the query.
-              A list of sources should also be included at the VERY BEGINNING of your response, before ANYTHING ELSE. The format should be JSON: { "sources": { globalIndex: "number", title: "string", summary: "string", url: "string" }[] }
-              where globalIndex is the index of the source globally for the entire chat. The globalIndex should be incremented for each new source.
+              A list of sources should also be included at the VERY BEGINNING of your response, before ANYTHING ELSE. The format should be JSON: { "sources": [{ "globalIndex": number, "title": "string", "summary": "string", "url": "string" }] }
+              where globalIndex is the index of the source globally for the entire chat. The globalIndex should be incremented for each new source, starting from ${startIndex}.
               where title is the title of the source and summary is the summary of the source and url is the url of the source.
               Do not include a list of sources or references at the end of your response, only the JSON list of sources at the beginning of your response.
               There also should be inline citations in the response, using the format: [<[1, 2, 3]>], wrapped in [<[ and ]>] and containing a comma separated list of source numbers. The number should be the globalIndex of the source.`,

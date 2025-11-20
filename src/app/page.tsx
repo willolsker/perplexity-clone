@@ -87,7 +87,10 @@ export default function Home() {
       const res = await fetch("/api/search/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: messagesForApi }),
+        body: JSON.stringify({
+          messages: messagesForApi,
+          startIndex: currentCitations.length + 1,
+        }),
       });
 
       if (!res.ok) throw new Error(res.statusText);
@@ -235,12 +238,9 @@ export default function Home() {
                   exit={{ opacity: 0, height: 0, overflow: "hidden" }}
                   className="text-center mt-[20vh] mb-8"
                 >
-                  <h1 className="text-5xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-cyan-500 dark:from-blue-400 dark:to-cyan-300">
+                  <h1 className="h-16 text-5xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-cyan-500 dark:from-blue-400 dark:to-cyan-300">
                     Perplexity Clone
                   </h1>
-                  <p className="text-xl text-gray-600 dark:text-gray-400">
-                    Where knowledge begins
-                  </p>
                 </motion.div>
               )}
             </AnimatePresence>
