@@ -15,7 +15,7 @@ export const searchRouter = createTRPCRouter({
 
         const result = await genAI.models.generateContent({
           model: "gemini-3-pro-preview",
-          contents: input.query,
+          contents: `${input.query}\n\nPlease answer the query and cite your sources inline using the format [1], [2], etc.`,
           config: {
             tools: [{ googleSearch: {} }],
           },
