@@ -1,0 +1,14 @@
+// This is a minimal Prisma schema since we don't need persistence
+// It's included to satisfy T3 stack requirements
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// No models needed for this project
+
