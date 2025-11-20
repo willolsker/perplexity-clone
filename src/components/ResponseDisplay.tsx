@@ -1,38 +1,91 @@
 import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { InlineCitation } from "./InlineCitation";
+
+export interface Source {
+  globalIndex: number;
+  title: string;
+  url: string;
+  summary?: string;
+}
 
 interface ResponseDisplayProps {
   response: string;
+  sources?: Source[];
   onHoverCitation?: (index: number | null) => void;
 }
 
-export function ResponseDisplay({ response, onHoverCitation }: ResponseDisplayProps) {
+const getHostname = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Source";
+  }
+};
+
+export function ResponseDisplay({
+  response,
+  sources = [],
+  onHoverCitation,
+}: ResponseDisplayProps) {
   if (!response) return null;
 
-  // Split by citation pattern [n]
-  const parts = response.split(/(\[\d+\])/g);
+  // Process the response to handle citations as links
+  // Format: [<[1, 2]>]
+  const processedResponse = response.replace(
+    /\[<\[([\d,\s]+)\]>\]/g,
+    (match, ids) => {
+      const indices = ids
+        .split(",")
+        .map((s: string) => parseInt(s.trim()))
+        .filter((n: number) => !isNaN(n));
+
+      if (indices.length === 0) return "";
+
+      const firstIndex = indices[0];
+      const source = sources.find((s) => s.globalIndex === firstIndex);
+      const hostname = source ? getHostname(source.url) : "Source";
+
+      const count = indices.length;
+      // Format: "hostname" or "hostname + x"
+      const label = count > 1 ? `${hostname} + ${count - 1}` : hostname;
+
+      // Create a custom scheme link: citation:1,2
+      return ` [${label}](citation:${indices.join(",")}) `;
+    }
+  );
 
   return (
     <div className="mt-8 space-y-6">
-      <div className="prose prose-slate dark:prose-invert max-w-none">
-        <div className="whitespace-pre-wrap text-gray-800 dark:text-gray-200 leading-relaxed">
-          {parts.map((part, i) => {
-            const match = part.match(/^\[(\d+)\]$/);
-            if (match) {
-              const index = parseInt(match[1]) - 1;
+      <div className="prose prose-slate dark:prose-invert max-w-none text-gray-800 dark:text-gray-200 leading-relaxed">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ node, href, children, ...props }) => {
+              if (href?.startsWith("citation:")) {
+                return (
+                  <InlineCitation href={href} onHoverCitation={onHoverCitation}>
+                    {children}
+                  </InlineCitation>
+                );
+              }
               return (
-                <span
-                  key={i}
-                  className="inline-flex items-center justify-center ml-1 w-5 h-5 text-xs font-medium text-blue-600 bg-blue-100 dark:text-blue-300 dark:bg-blue-900/50 rounded-full cursor-pointer hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors align-top select-none"
-                  onMouseEnter={() => onHoverCitation?.(index)}
-                  onMouseLeave={() => onHoverCitation?.(null)}
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline"
+                  {...props}
                 >
-                  {match[1]}
-                </span>
+                  {children}
+                </a>
               );
-            }
-            return <span key={i}>{part}</span>;
-          })}
-        </div>
+            },
+          }}
+        >
+          {processedResponse}
+        </ReactMarkdown>
       </div>
     </div>
   );

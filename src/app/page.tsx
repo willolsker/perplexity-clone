@@ -3,30 +3,65 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { QueryForm } from "~/components/QueryForm";
-import { ResponseDisplay } from "~/components/ResponseDisplay";
+import { ResponseDisplay, Source } from "~/components/ResponseDisplay";
 import { SearchResultsSidebar } from "~/components/SearchResultsSidebar";
 import { TopBar } from "~/components/TopBar";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
-  citations?: Array<{ title: string; url: string }>;
+  citations?: Source[];
+}
+
+function findJsonEnd(text: string): number {
+  let braceCount = 0;
+  let inString = false;
+  let escaped = false;
+
+  const startIndex = text.indexOf("{");
+  if (startIndex === -1) return -1;
+
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+
+    if (char === '"' && !escaped) {
+      inString = !inString;
+    }
+
+    if (!inString) {
+      if (char === "{") braceCount++;
+      if (char === "}") {
+        braceCount--;
+        if (braceCount === 0) return i;
+      }
+    }
+
+    if (char === "\\" && !escaped) escaped = true;
+    else escaped = false;
+  }
+
+  return -1;
 }
 
 export default function Home() {
   const [hasSearched, setHasSearched] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [highlightedCitation, setHighlightedCitation] = useState<number | null>(null);
-  
+  const [highlightedCitation, setHighlightedCitation] = useState<number | null>(
+    null
+  );
+
   const [messages, setMessages] = useState<Message[]>([]);
-  const [currentCitations, setCurrentCitations] = useState<Array<{ title: string; url: string }>>([]);
+  const [currentCitations, setCurrentCitations] = useState<Source[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
   }, [messages, isLoading]);
 
@@ -34,16 +69,18 @@ export default function Home() {
     setHasSearched(true);
     setIsLoading(true);
     setError(null);
-    setCurrentCitations([]);
+    // We don't reset currentCitations here because we want to accumulate them across the chat
+    // But if it's a new chat session? The user implied "entire chat".
+    // If we refresh, state is lost. That's fine.
+    // If we make a new query in the same session, we keep citations.
 
     const newMessagesWithPlaceholder: Message[] = [
       ...messages,
       { role: "user", content: searchQuery },
-      { role: "assistant", content: "" }
+      { role: "assistant", content: "" },
     ];
     setMessages(newMessagesWithPlaceholder);
 
-    // Helper to get messages for API call without the empty assistant placeholder
     const messagesForApi = newMessagesWithPlaceholder.slice(0, -1);
 
     try {
@@ -59,14 +96,17 @@ export default function Home() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      
+      let fullResponseText = "";
+      let sourcesParsed = false;
+      let jsonEndIndex = -1;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         const chunk = decoder.decode(value, { stream: true });
         buffer += chunk;
-        
+
         const lines = buffer.split("\n\n");
         buffer = lines.pop() || "";
 
@@ -74,33 +114,72 @@ export default function Home() {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              
-              if (data.citations && data.citations.length > 0) {
-                 setCurrentCitations(prev => {
-                  const newCitations = [...prev, ...data.citations];
-                  // Deduplicate citations
-                  const uniqueCitations = Array.from(
-                    new Map(newCitations.map((item) => [item.url, item])).values()
-                  );
-                  return uniqueCitations;
-                });
+              // data.text is the chunk
+              fullResponseText += data.text || "";
+
+              // Try to parse sources JSON from the beginning of the stream
+              if (!sourcesParsed) {
+                const trimmedText = fullResponseText.trimStart();
+                if (trimmedText.startsWith("{")) {
+                  const end = findJsonEnd(trimmedText);
+                  if (end !== -1) {
+                    const jsonStr = trimmedText.substring(0, end + 1);
+                    try {
+                      const parsed = JSON.parse(jsonStr);
+                      if (parsed.sources) {
+                        const newSources = Array.isArray(parsed.sources)
+                          ? parsed.sources
+                          : [parsed.sources]; // Handle single object case just in case
+
+                        setCurrentCitations((prev) => {
+                          const existingIds = new Set(
+                            prev.map((s) => s.globalIndex)
+                          );
+                          const uniqueNew = newSources.filter(
+                            (s: Source) => !existingIds.has(s.globalIndex)
+                          );
+                          return [...prev, ...uniqueNew];
+                        });
+                      }
+                      sourcesParsed = true;
+                      jsonEndIndex =
+                        fullResponseText.indexOf(jsonStr) + jsonStr.length;
+                    } catch (e) {
+                      // JSON parse failed, maybe incomplete
+                    }
+                  }
+                } else if (fullResponseText.length > 100) {
+                  // If we have enough text and it doesn't start with {, assume no sources JSON
+                  sourcesParsed = true;
+                }
               }
 
-              setMessages(prev => {
+              let displayText = fullResponseText;
+              if (sourcesParsed && jsonEndIndex !== -1) {
+                displayText = fullResponseText
+                  .substring(jsonEndIndex)
+                  .trimStart();
+              } else if (
+                !sourcesParsed &&
+                fullResponseText.trimStart().startsWith("{")
+              ) {
+                // While parsing JSON, show nothing to avoid flashing raw JSON
+                displayText = "";
+              }
+
+              setMessages((prev) => {
                 const lastMsg = prev[prev.length - 1];
                 if (lastMsg.role === "assistant") {
-                   return [
-                     ...prev.slice(0, -1),
-                     { 
-                       ...lastMsg, 
-                       content: lastMsg.content + (data.text || ""),
-                       citations: data.citations ? [...(lastMsg.citations || []), ...data.citations] : lastMsg.citations // Accumulate citations? Or just rely on currentCitations for sidebar
-                     }
-                   ];
+                  return [
+                    ...prev.slice(0, -1),
+                    {
+                      ...lastMsg,
+                      content: displayText,
+                    },
+                  ];
                 }
                 return prev;
               });
-
             } catch (e) {
               console.error("Error parsing chunk", e);
             }
@@ -108,7 +187,9 @@ export default function Home() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to stream response");
+      setError(
+        err instanceof Error ? err.message : "Failed to stream response"
+      );
     } finally {
       setIsLoading(false);
     }
@@ -131,19 +212,20 @@ export default function Home() {
       >
         {/* Top Bar */}
         {hasSearched && (
-          <TopBar 
-            isSidebarOpen={isSidebarOpen} 
-            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} 
+          <TopBar
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           />
         )}
 
         {/* Scrollable Content Area */}
-        <div 
+        <div
           ref={scrollRef}
-          className={`flex-1 overflow-y-auto px-4 ${hasSearched ? "pt-20" : "pt-8"}`}
+          className={`flex-1 overflow-y-auto px-4 ${
+            hasSearched ? "mt-16 pt-4" : "pt-8"
+          }`}
         >
           <div className="container mx-auto max-w-4xl min-h-full flex flex-col pb-32">
-            
             {/* Header / Title */}
             <AnimatePresence>
               {!hasSearched && (
@@ -188,26 +270,24 @@ export default function Home() {
                       </div>
                     );
                   }
-                  
+
                   const isLast = index === messages.length - 1;
-                  const showResearching = isLoading && isLast;
-                  const showFinished = !isLoading && isLast; // Or always show finished for past messages? Let's stick to the latest one or just completed ones.
-                                                             // Requirement: "once done, it should say 'Finished researching'"
-                  
+
                   return (
                     <div key={index} className="relative">
                       <div className="flex items-center gap-2 mb-4 text-sm text-gray-500 dark:text-gray-400">
-                         {isLoading && isLast ? (
-                            <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-blue-600 bg-[length:200%_auto] bg-clip-text text-transparent animate-shimmer">
-                              Researching...
-                            </span>
-                         ) : (
-                            <span>Finished researching</span>
-                         )}
+                        {isLoading && isLast ? (
+                          <span className="bg-gradient-to-r from-[#555] via-[#999] to-[#555] dark:from-[#888] dark:via-[#fff] dark:to-[#888] bg-[length:200%_auto] bg-clip-text text-transparent animate-shimmer">
+                            Researching...
+                          </span>
+                        ) : (
+                          <span>Finished researching</span>
+                        )}
                       </div>
-                      
+
                       <ResponseDisplay
                         response={msg.content}
+                        sources={currentCitations}
                         onHoverCitation={setHighlightedCitation}
                       />
                     </div>
@@ -221,10 +301,7 @@ export default function Home() {
         {/* Input Area - Always at bottom of flex column */}
         <div className="p-4 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-t border-transparent">
           <div className="container mx-auto max-w-4xl">
-             <QueryForm
-              onSubmit={handleSubmit}
-              isLoading={isLoading}
-            />
+            <QueryForm onSubmit={handleSubmit} isLoading={isLoading} />
           </div>
         </div>
       </div>

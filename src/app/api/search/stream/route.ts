@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     // Append instruction to the last user message
     const lastMessage = contents[contents.length - 1];
     if (lastMessage.role === "user") {
-        lastMessage.parts[0].text += "\n\nPlease answer the query and cite your sources inline using the format [1], [2], etc.";
+      // System prompt now handles instructions
     }
 
     const stream = new ReadableStream({
@@ -38,6 +38,12 @@ export async function POST(req: NextRequest) {
             contents: contents,
             config: {
               tools: [{ googleSearch: {} }],
+              systemInstruction: `Please cite your sources before answering the query.
+              A list of sources should also be included at the VERY BEGINNING of your response, before ANYTHING ELSE. The format should be JSON: { "sources": { globalIndex: "number", title: "string", summary: "string", url: "string" }[] }
+              where globalIndex is the index of the source globally for the entire chat. The globalIndex should be incremented for each new source.
+              where title is the title of the source and summary is the summary of the source and url is the url of the source.
+              Do not include a list of sources or references at the end of your response, only the JSON list of sources at the beginning of your response.
+              There also should be inline citations in the response, using the format: [<[1, 2, 3]>], wrapped in [<[ and ]>] and containing a comma separated list of source numbers. The number should be the globalIndex of the source.`,
             },
           });
 
@@ -46,7 +52,7 @@ export async function POST(req: NextRequest) {
           for await (const chunk of result) {
             const candidate = chunk.candidates?.[0];
             const text = candidate?.content?.parts?.[0]?.text || "";
-            
+
             // Extract citations if available
             let citations: Array<{ title: string; url: string }> = [];
             if (candidate?.groundingMetadata?.groundingChunks) {
@@ -62,12 +68,12 @@ export async function POST(req: NextRequest) {
 
             const data = JSON.stringify({
               text,
-              citations
+              citations,
             });
 
             controller.enqueue(encoder.encode(`data: ${data}\n\n`));
           }
-          
+
           controller.close();
         } catch (error) {
           console.error("Streaming error:", error);
@@ -80,7 +86,7 @@ export async function POST(req: NextRequest) {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       },
     });
   } catch (error) {

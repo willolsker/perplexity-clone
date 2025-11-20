@@ -23,9 +23,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       transformer: superjson,
       links: [
         httpBatchLink({
-          url: typeof window !== "undefined" 
-            ? "/api/trpc" 
-            : `http://localhost:${process.env.PORT ?? 3000}/api/trpc`,
+          url:
+            typeof window !== "undefined"
+              ? "/api/trpc"
+              : `http://localhost:${process.env.PORT ?? 3000}/api/trpc`,
         }),
       ],
     })

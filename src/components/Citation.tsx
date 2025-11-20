@@ -1,11 +1,18 @@
 interface CitationProps {
   title: string;
   url: string;
-  index: number;
+  number: number;
   isHighlighted?: boolean;
 }
 
-export function Citation({ title, url, index, isHighlighted }: CitationProps) {
+export function Citation({ title, url, number, isHighlighted }: CitationProps) {
+  let hostname = "Source";
+  try {
+    hostname = new URL(url).hostname;
+  } catch (e) {
+    // ignore invalid url
+  }
+
   return (
     <a
       href={url}
@@ -18,17 +25,16 @@ export function Citation({ title, url, index, isHighlighted }: CitationProps) {
       }`}
     >
       <span className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 text-xs font-medium">
-        {index + 1}
+        {number}
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
           {title}
         </p>
         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-          {new URL(url).hostname}
+          {hostname}
         </p>
       </div>
     </a>
   );
 }
-

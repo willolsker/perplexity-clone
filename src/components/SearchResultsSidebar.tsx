@@ -1,8 +1,9 @@
 import { motion, AnimatePresence } from "motion/react";
 import { Citation } from "./Citation";
+import { Source } from "./ResponseDisplay";
 
 interface SearchResultsSidebarProps {
-  citations: Array<{ title: string; url: string }>;
+  citations: Source[];
   highlightedIndex: number | null;
   isOpen: boolean;
 }
@@ -28,7 +29,7 @@ export function SearchResultsSidebar({
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <span className="text-xl">📚</span> Sources
               </h2>
-              
+
               {citations.length === 0 ? (
                 <p className="text-gray-500 dark:text-gray-400 text-sm">
                   No sources found for this search.
@@ -37,11 +38,11 @@ export function SearchResultsSidebar({
                 <div className="space-y-3">
                   {citations.map((citation, index) => (
                     <Citation
-                      key={citation.url + index}
+                      key={citation.url + citation.globalIndex}
                       title={citation.title}
                       url={citation.url}
-                      index={index}
-                      isHighlighted={highlightedIndex === index}
+                      number={citation.globalIndex}
+                      isHighlighted={highlightedIndex === citation.globalIndex}
                     />
                   ))}
                 </div>
@@ -53,4 +54,3 @@ export function SearchResultsSidebar({
     </div>
   );
 }
-
