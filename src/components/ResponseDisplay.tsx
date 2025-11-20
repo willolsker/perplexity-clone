@@ -16,14 +16,6 @@ interface ResponseDisplayProps {
   onHoverCitation?: (index: number | null) => void;
 }
 
-const getHostname = (url: string) => {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "Source";
-  }
-};
-
 export function ResponseDisplay({
   response,
   sources = [],
@@ -32,27 +24,17 @@ export function ResponseDisplay({
   if (!response) return null;
 
   // Process the response to handle citations as links
-  // Format: [<[1, 2]>]
+  // Format: [<[1, 2]>] -> [citation](#citation-1,2)
   const processedResponse = response.replace(
     /\[<\[([\d,\s]+)\]>\]/g,
     (match, ids) => {
       const indices = ids
         .split(",")
-        .map((s: string) => parseInt(s.trim()))
-        .filter((n: number) => !isNaN(n));
+        .map((s: string) => s.trim())
+        .filter((s: string) => !isNaN(parseInt(s)));
 
       if (indices.length === 0) return "";
-
-      const firstIndex = indices[0];
-      const source = sources.find((s) => s.globalIndex === firstIndex);
-      const hostname = source ? getHostname(source.url) : "Source";
-
-      const count = indices.length;
-      // Format: "hostname" or "hostname + x"
-      const label = count > 1 ? `${hostname} + ${count - 1}` : hostname;
-
-      // Create a custom scheme link: citation:1,2
-      return ` [${label}](citation:${indices.join(",")}) `;
+      return ` [citation](#citation-${indices.join(",")}) `;
     }
   );
 
@@ -63,11 +45,13 @@ export function ResponseDisplay({
           remarkPlugins={[remarkGfm]}
           components={{
             a: ({ node, href, children, ...props }) => {
-              if (href?.startsWith("citation:")) {
+              if (href?.startsWith("#citation-")) {
                 return (
-                  <InlineCitation href={href} onHoverCitation={onHoverCitation}>
-                    {children}
-                  </InlineCitation>
+                  <InlineCitation
+                    href={href}
+                    sources={sources}
+                    onHoverCitation={onHoverCitation}
+                  />
                 );
               }
               return (

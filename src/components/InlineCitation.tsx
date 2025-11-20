@@ -1,19 +1,39 @@
 import React from "react";
+import { Source } from "./ResponseDisplay";
 
 interface InlineCitationProps {
   href: string;
-  children: React.ReactNode;
+  sources: Source[];
   onHoverCitation?: (index: number | null) => void;
 }
 
+const getHostname = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Source";
+  }
+};
+
 export function InlineCitation({
   href,
-  children,
+  sources,
   onHoverCitation,
 }: InlineCitationProps) {
-  const indicesString = href.replace("citation:", "");
-  const indices = indicesString.split(",").map(Number);
+  const indicesString = href.replace("#citation-", "");
+  const indices = indicesString
+    .split(",")
+    .map((s) => parseInt(s.trim()))
+    .filter((n) => !isNaN(n));
+
+  if (indices.length === 0) return null;
+
   const firstIndex = indices[0];
+  const source = sources.find((s) => s.globalIndex === firstIndex);
+  const hostname = source ? getHostname(source.url) : "Source";
+
+  const count = indices.length;
+  const label = count > 1 ? `${hostname} + ${count - 1}` : hostname;
 
   return (
     <span
@@ -25,7 +45,7 @@ export function InlineCitation({
         e.stopPropagation();
       }}
     >
-      {children}
+      {label}
     </span>
   );
 }
