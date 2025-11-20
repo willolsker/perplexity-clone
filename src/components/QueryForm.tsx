@@ -14,7 +14,9 @@ export function QueryForm({ onSubmit, isLoading }: QueryFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim() && !isLoading) {
-      onSubmit(query.trim());
+      const currentQuery = query.trim();
+      setQuery("");
+      onSubmit(currentQuery);
     }
   };
 
@@ -31,8 +33,7 @@ export function QueryForm({ onSubmit, isLoading }: QueryFormProps) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask anything..."
-            disabled={isLoading}
-            className="w-full px-6 py-4 pr-32 text-lg border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white placeholder-gray-400 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg"
+            className="w-full px-6 py-4 pr-32 text-lg border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white placeholder-gray-400 shadow-lg"
           />
           <button
             type="submit"

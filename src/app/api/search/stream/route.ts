@@ -4,22 +4,38 @@ import { NextRequest, NextResponse } from "next/server";
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { query } = await req.json();
+    const { messages } = await req.json();
 
-    if (!query) {
-      return new NextResponse("Query is required", { status: 400 });
+    if (!messages || !Array.isArray(messages) || messages.length === 0) {
+      return new NextResponse("Messages are required", { status: 400 });
     }
 
     const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+    const contents = messages.map((msg: Message) => ({
+      role: msg.role === "user" ? "user" : "model",
+      parts: [{ text: msg.content }],
+    }));
+
+    // Append instruction to the last user message
+    const lastMessage = contents[contents.length - 1];
+    if (lastMessage.role === "user") {
+        lastMessage.parts[0].text += "\n\nPlease answer the query and cite your sources inline using the format [1], [2], etc.";
+    }
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
           const result = await genAI.models.generateContentStream({
             model: "gemini-3-pro-preview",
-            contents: `${query}\n\nPlease answer the query and cite your sources inline using the format [1], [2], etc.`,
+            contents: contents,
             config: {
               tools: [{ googleSearch: {} }],
             },
@@ -75,4 +91,3 @@ export async function POST(req: NextRequest) {
     );
   }
 }
-

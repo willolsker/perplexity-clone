@@ -12,7 +12,7 @@ export function ResponseDisplay({ response, onHoverCitation }: ResponseDisplayPr
   const parts = response.split(/(\[\d+\])/g);
 
   return (
-    <div className="mt-8 space-y-6 pb-32">
+    <div className="mt-8 space-y-6">
       <div className="prose prose-slate dark:prose-invert max-w-none">
         <div className="whitespace-pre-wrap text-gray-800 dark:text-gray-200 leading-relaxed">
           {parts.map((part, i) => {

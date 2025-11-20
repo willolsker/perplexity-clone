@@ -1,34 +1,56 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { QueryForm } from "~/components/QueryForm";
 import { ResponseDisplay } from "~/components/ResponseDisplay";
 import { SearchResultsSidebar } from "~/components/SearchResultsSidebar";
 import { TopBar } from "~/components/TopBar";
 
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  citations?: Array<{ title: string; url: string }>;
+}
+
 export default function Home() {
   const [hasSearched, setHasSearched] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [highlightedCitation, setHighlightedCitation] = useState<number | null>(null);
   
-  const [response, setResponse] = useState("");
-  const [citations, setCitations] = useState<Array<{ title: string; url: string }>>([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [currentCitations, setCurrentCitations] = useState<Array<{ title: string; url: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [messages, isLoading]);
 
   const handleSubmit = async (searchQuery: string) => {
     setHasSearched(true);
     setIsLoading(true);
     setError(null);
-    setResponse("");
-    setCitations([]);
+    setCurrentCitations([]);
+
+    const newMessagesWithPlaceholder: Message[] = [
+      ...messages,
+      { role: "user", content: searchQuery },
+      { role: "assistant", content: "" }
+    ];
+    setMessages(newMessagesWithPlaceholder);
+
+    // Helper to get messages for API call without the empty assistant placeholder
+    const messagesForApi = newMessagesWithPlaceholder.slice(0, -1);
 
     try {
       const res = await fetch("/api/search/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: searchQuery }),
+        body: JSON.stringify({ messages: messagesForApi }),
       });
 
       if (!res.ok) throw new Error(res.statusText);
@@ -37,7 +59,7 @@ export default function Home() {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -52,11 +74,9 @@ export default function Home() {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.text) {
-                setResponse(prev => prev + data.text);
-              }
+              
               if (data.citations && data.citations.length > 0) {
-                setCitations(prev => {
+                 setCurrentCitations(prev => {
                   const newCitations = [...prev, ...data.citations];
                   // Deduplicate citations
                   const uniqueCitations = Array.from(
@@ -65,6 +85,22 @@ export default function Home() {
                   return uniqueCitations;
                 });
               }
+
+              setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                if (lastMsg.role === "assistant") {
+                   return [
+                     ...prev.slice(0, -1),
+                     { 
+                       ...lastMsg, 
+                       content: lastMsg.content + (data.text || ""),
+                       citations: data.citations ? [...(lastMsg.citations || []), ...data.citations] : lastMsg.citations // Accumulate citations? Or just rely on currentCitations for sidebar
+                     }
+                   ];
+                }
+                return prev;
+              });
+
             } catch (e) {
               console.error("Error parsing chunk", e);
             }
@@ -82,7 +118,7 @@ export default function Home() {
     <main className="h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white relative selection:bg-blue-100 dark:selection:bg-blue-900 flex overflow-hidden">
       {/* Sidebar (Fixed) */}
       <SearchResultsSidebar
-        citations={citations}
+        citations={currentCitations}
         highlightedIndex={highlightedCitation}
         isOpen={isSidebarOpen && hasSearched}
       />
@@ -102,8 +138,11 @@ export default function Home() {
         )}
 
         {/* Scrollable Content Area */}
-        <div className={`flex-1 overflow-y-auto px-4 ${hasSearched ? "pt-20" : "pt-8"}`}>
-          <div className="container mx-auto max-w-4xl min-h-full flex flex-col">
+        <div 
+          ref={scrollRef}
+          className={`flex-1 overflow-y-auto px-4 ${hasSearched ? "pt-20" : "pt-8"}`}
+        >
+          <div className="container mx-auto max-w-4xl min-h-full flex flex-col pb-32">
             
             {/* Header / Title */}
             <AnimatePresence>
@@ -129,7 +168,7 @@ export default function Home() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="flex-1 pb-4"
+                className="flex-1 space-y-8"
               >
                 {error && (
                   <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
@@ -139,21 +178,41 @@ export default function Home() {
                   </div>
                 )}
 
-                {isLoading && !response && (
-                  <div className="flex flex-col items-center justify-center mt-20 space-y-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                    <span className="text-gray-600 dark:text-gray-400 animate-pulse">
-                      Thinking...
-                    </span>
-                  </div>
-                )}
-
-                {(response || (!isLoading && !error)) && (
-                  <ResponseDisplay
-                    response={response}
-                    onHoverCitation={setHighlightedCitation}
-                  />
-                )}
+                {messages.map((msg, index) => {
+                  if (msg.role === "user") {
+                    return (
+                      <div key={index} className="flex justify-end mb-8">
+                        <div className="bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-2xl px-5 py-3 max-w-[75%] text-left leading-relaxed">
+                          {msg.content}
+                        </div>
+                      </div>
+                    );
+                  }
+                  
+                  const isLast = index === messages.length - 1;
+                  const showResearching = isLoading && isLast;
+                  const showFinished = !isLoading && isLast; // Or always show finished for past messages? Let's stick to the latest one or just completed ones.
+                                                             // Requirement: "once done, it should say 'Finished researching'"
+                  
+                  return (
+                    <div key={index} className="relative">
+                      <div className="flex items-center gap-2 mb-4 text-sm text-gray-500 dark:text-gray-400">
+                         {isLoading && isLast ? (
+                            <span className="bg-gradient-to-r from-blue-600 via-purple-500 to-blue-600 bg-[length:200%_auto] bg-clip-text text-transparent animate-shimmer">
+                              Researching...
+                            </span>
+                         ) : (
+                            <span>Finished researching</span>
+                         )}
+                      </div>
+                      
+                      <ResponseDisplay
+                        response={msg.content}
+                        onHoverCitation={setHighlightedCitation}
+                      />
+                    </div>
+                  );
+                })}
               </motion.div>
             )}
           </div>
