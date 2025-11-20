@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { api } from "~/utils/api";
 import { QueryForm } from "~/components/QueryForm";
 import { ResponseDisplay } from "~/components/ResponseDisplay";
 import { SearchResultsSidebar } from "~/components/SearchResultsSidebar";
@@ -12,19 +11,78 @@ export default function Home() {
   const [hasSearched, setHasSearched] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [highlightedCitation, setHighlightedCitation] = useState<number | null>(null);
+  
+  const [response, setResponse] = useState("");
+  const [citations, setCitations] = useState<Array<{ title: string; url: string }>>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const searchMutation = api.search.query.useMutation();
-
-  const handleSubmit = (searchQuery: string) => {
+  const handleSubmit = async (searchQuery: string) => {
     setHasSearched(true);
-    searchMutation.mutate({ query: searchQuery });
+    setIsLoading(true);
+    setError(null);
+    setResponse("");
+    setCitations([]);
+
+    try {
+      const res = await fetch("/api/search/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: searchQuery }),
+      });
+
+      if (!res.ok) throw new Error(res.statusText);
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        buffer += chunk;
+        
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.text) {
+                setResponse(prev => prev + data.text);
+              }
+              if (data.citations && data.citations.length > 0) {
+                setCitations(prev => {
+                  const newCitations = [...prev, ...data.citations];
+                  // Deduplicate citations
+                  const uniqueCitations = Array.from(
+                    new Map(newCitations.map((item) => [item.url, item])).values()
+                  );
+                  return uniqueCitations;
+                });
+              }
+            } catch (e) {
+              console.error("Error parsing chunk", e);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to stream response");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <main className="h-screen bg-white dark:bg-gray-900 text-gray-900 dark:text-white relative selection:bg-blue-100 dark:selection:bg-blue-900 flex overflow-hidden">
       {/* Sidebar (Fixed) */}
       <SearchResultsSidebar
-        citations={searchMutation.data?.citations ?? []}
+        citations={citations}
         highlightedIndex={highlightedCitation}
         isOpen={isSidebarOpen && hasSearched}
       />
@@ -73,15 +131,15 @@ export default function Home() {
                 animate={{ opacity: 1 }}
                 className="flex-1 pb-4"
               >
-                {searchMutation.isError && (
+                {error && (
                   <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                     <p className="text-red-800 dark:text-red-200">
-                      Error: {searchMutation.error?.message ?? "Something went wrong"}
+                      Error: {error}
                     </p>
                   </div>
                 )}
 
-                {searchMutation.isPending && (
+                {isLoading && !response && (
                   <div className="flex flex-col items-center justify-center mt-20 space-y-4">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                     <span className="text-gray-600 dark:text-gray-400 animate-pulse">
@@ -90,21 +148,14 @@ export default function Home() {
                   </div>
                 )}
 
-                {searchMutation.isSuccess && searchMutation.data && (
+                {(response || (!isLoading && !error)) && (
                   <ResponseDisplay
-                    response={searchMutation.data.response}
+                    response={response}
                     onHoverCitation={setHighlightedCitation}
                   />
                 )}
               </motion.div>
             )}
-
-             {/* Spacer to push input down in Home view if needed, 
-                 but we want Input in a separate fixed-ish container or at bottom of flex? 
-                 Actually, putting Input OUTSIDE the scroll area makes it "fixed".
-                 Putting it INSIDE makes it scroll with content.
-                 We want it "fixed" to bottom.
-              */}
           </div>
         </div>
 
@@ -113,7 +164,7 @@ export default function Home() {
           <div className="container mx-auto max-w-4xl">
              <QueryForm
               onSubmit={handleSubmit}
-              isLoading={searchMutation.isPending}
+              isLoading={isLoading}
             />
           </div>
         </div>
